@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8">  <!-- 确保使用UTF-8编码 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>批量查询 - Story主网地址查询</title>
     <style>
@@ -66,6 +66,18 @@
         .red-row {
             background-color: #f8d7da; /* 红色背景 */
         }
+        .stats {
+            margin-top: 20px;
+            font-size: 16px;
+            text-align: center;
+        }
+        .query-status {
+            margin-top: 10px;
+            text-align: left;
+        }
+        .query-status p {
+            margin: 5px 0;
+        }
     </style>
 </head>
 <body>
@@ -85,6 +97,8 @@
         <textarea id="addresses" placeholder="请输入地址，每行一个地址"></textarea>
         <button id="checkBalancesBtn">查询IP余额、交易次数、NFT 和其它代币</button>
 
+        <div id="queryStatus" class="query-status"></div> <!-- 显示查询状态 -->
+
         <table id="results">
             <thead>
                 <tr>
@@ -94,7 +108,7 @@
                     <th>交易次数</th>
                     <th>NFT 名称和数量</th>
                     <th>其它代币</th>
-                    <th>域名</th> <!-- 添加域名列 -->
+                    <th>域名</th>
                     <th>最后活跃时间</th>
                 </tr>
             </thead>
@@ -102,6 +116,13 @@
                 <!-- 查询结果会在这里显示 -->
             </tbody>
         </table>
+
+        <!-- 显示查询统计信息 -->
+        <div class="stats">
+            <p>总查询账号数: <span id="totalCount">0</span></p>
+            <p>有数据的账号数: <span id="withDataCount">0</span></p>
+            <p>没有数据的账号数: <span id="noDataCount">0</span></p>
+        </div>
 
         <div class="footer">
             <p>由 <a href="https://x.com/0xXIAOc" target="_blank">@0xXIAOc</a> 提供</p>
@@ -114,75 +135,74 @@
             const includeNft = document.getElementById("includeNft").checked;
             const includeTokens = document.getElementById("includeTokens").checked;
             const resultsDiv = document.getElementById("results").getElementsByTagName('tbody')[0];
-            resultsDiv.innerHTML = '';  // 清空之前的查询结果
+            const queryStatusDiv = document.getElementById("queryStatus");
 
+            // 清空以前的查询结果和查询状态
+            resultsDiv.innerHTML = '';
+            queryStatusDiv.innerHTML = ''; // 清空查询状态
+            let totalCount = 0; // 总查询账号数
+            let withDataCount = 0; // 有数据的账号数
+            let noDataCount = 0; // 没有数据的账号数
             let index = 1; // 初始化编号
 
             for (let address of addresses) {
                 address = address.trim();
                 if (!address) continue;
 
+                totalCount++; // 增加总查询账号数
+                queryStatusDiv.innerHTML += `<p>查询地址: ${address} 正在查询...</p>`; // 显示正在查询的地址
+
                 try {
-                    // 查询IP余额数据
-                    const balanceResponse = await fetch(`https://www.storyscan.xyz/api/v2/addresses/${address}`);
+                    // 请求地址的各项数据
+                    const balanceResponse = await fetchWithRetry(`https://www.storyscan.xyz/api/v2/addresses/${address}`);
                     const balanceData = await balanceResponse.json();
 
-                    // 查询交易次数数据
-                    const transactionResponse = await fetch(`https://www.storyscan.xyz/api/v2/addresses/${address}/counters`);
+                    const transactionResponse = await fetchWithRetry(`https://www.storyscan.xyz/api/v2/addresses/${address}/counters`);
                     const transactionData = await transactionResponse.json();
 
-                    // 查询NFT数据（包括域名信息）
-                    const nftResponse = includeNft ? await fetch(`https://www.storyscan.xyz/api/v2/addresses/${address}/tokens?type=ERC-721`) : null;
+                    const nftResponse = includeNft ? await fetchWithRetry(`https://www.storyscan.xyz/api/v2/addresses/${address}/tokens?type=ERC-721`) : null;
                     const nftData = nftResponse ? await nftResponse.json() : { items: [] };
 
-                    // 查询其它代币数据
-                    const tokensResponse = includeTokens ? await fetch(`https://www.storyscan.xyz/api/v2/addresses/${address}/tokens?type=ERC-20`) : null;
+                    const tokensResponse = includeTokens ? await fetchWithRetry(`https://www.storyscan.xyz/api/v2/addresses/${address}/tokens?type=ERC-20`) : null;
                     const tokensData = tokensResponse ? await tokensResponse.json() : { items: [] };
 
-                    // 查询交易记录用于获取最后活跃时间
-                    const transactionsResponse = await fetch(`https://www.storyscan.xyz/api/v2/addresses/${address}/transactions`);
+                    const transactionsResponse = await fetchWithRetry(`https://www.storyscan.xyz/api/v2/addresses/${address}/transactions`);
                     const transactionsData = await transactionsResponse.json();
 
-                    // IP余额格式化
-                    const balance = balanceData.coin_balance ? (parseInt(balanceData.coin_balance) / Math.pow(10, 18)).toFixed(6) : "0"; // 转换为标准的IP余额
+                    // 使用默认值
+                    const balance = balanceData.coin_balance ? (parseInt(balanceData.coin_balance) / Math.pow(10, 18)).toFixed(6) : "0";
                     const transactionsCount = transactionData.transactions_count ? parseInt(transactionData.transactions_count) : 0;
 
-                    // NFT名称和数量
                     let nftList = '';
                     if (includeNft && nftData.items.length > 0) {
-                        nftList = nftData.items.map(item => `
-                            <p><span>NFT 名称:</span> ${item.token.name}</p>
-                            <p><span>NFT 数量:</span> ${item.value}</p>
-                        `).join('');
+                        nftList = nftData.items.map(item => 
+                            `<p><span>NFT 名称:</span> ${item.token.name}</p>
+                            <p><span>NFT 数量:</span> ${item.value}</p>`
+                        ).join('');
                     } else if (includeNft) {
-                        nftList = `<p><span>NFT:</span> 没有NFT</p>`;
+                        nftList = `<p><span>NFT:</span> 无</p>`;
                     }
 
-                    // 其它代币
                     let tokenList = '';
                     if (includeTokens && tokensData.items.length > 0) {
                         tokenList = tokensData.items.map(item => {
                             let tokenBalance = parseInt(item.value) / Math.pow(10, item.token.decimals);
-                            return `
-                                <p><span>代币名称:</span> ${item.token.name} (${item.token.symbol})</p>
-                                <p><span>余额:</span> ${tokenBalance.toFixed(6)} ${item.token.symbol}</p>
-                            `;
+                            return `<p><span>代币名称:</span> ${item.token.name} (${item.token.symbol})</p>
+                                <p><span>余额:</span> ${tokenBalance.toFixed(6)} ${item.token.symbol}</p>`;
                         }).join('');
                     } else if (includeTokens) {
                         tokenList = `<p><span>其它代币:</span> 无</p>`;
                     }
 
-                    // 单独查询域名
                     let domainName = '';
-                    const domainResponse = await fetch(`https://www.storyscan.xyz/api/v2/addresses/${address}/tokens?type=ERC-721`);
+                    const domainResponse = await fetchWithRetry(`https://www.storyscan.xyz/api/v2/addresses/${address}/tokens?type=ERC-721`);
                     const domainData = await domainResponse.json();
                     domainData.items.forEach(item => {
                         if (item.token.address.toLowerCase() === "0xff829d3ea4d8f25bf8be2d8774c080a8046cb7e1") {
-                            domainName = "有域名"; // 显示"有域名"或者可以显示更具体的名称
+                            domainName = "有域名";
                         }
                     });
 
-                    // 计算最后活跃时间
                     const lastActiveTimestamp = transactionsData.items[0]?.timestamp;
                     const lastActiveDate = lastActiveTimestamp ? new Date(lastActiveTimestamp) : null;
                     let lastActiveTime = '';
@@ -196,38 +216,80 @@
                             lastActiveTime = '1天前';
                         } else if (diffInDays >= 7) {
                             lastActiveTime = `${diffInDays}天前`;
-                            rowClass = 'red-row';  // 大于等于7天的最后活跃时间行显示红色
+                            rowClass = 'red-row';
                         } else {
                             lastActiveTime = `${diffInDays}天前`;
                         }
                     }
 
-                    // 构造结果行
-                    const resultHTML = `
-                        <tr class="result-item ${rowClass}">
-                            <td>${index}</td> <!-- 添加编号 -->
+                    // 渲染查询结果
+                    resultsDiv.innerHTML += 
+                        `<tr class="result-item ${rowClass}">
+                            <td>${index}</td>
                             <td>${address}</td>
                             <td>${balance} IP</td>
                             <td>${transactionsCount}</td>
-                            <td>${nftList}</td>
-                            <td>${tokenList}</td>
-                            <td>${domainName || "无"}</td> <!-- 显示域名，如果没有则显示"无" -->
-                            <td>${lastActiveTime}</td>
-                        </tr>
-                    `;
-                    resultsDiv.innerHTML += resultHTML;
-
+                            <td>${nftList || '无'}</td>
+                            <td>${tokenList || '无'}</td>
+                            <td>${domainName || "无"}</td>
+                            <td>${lastActiveTime || '无'}</td>
+                        </tr>`;
                     index++; // 增加编号
+
+                    // 判断是否有数据
+                    if (balance !== "0" || transactionsCount > 0 || nftData.items.length > 0 || tokensData.items.length > 0) {
+                        withDataCount++; // 有数据的账号
+                    } else {
+                        noDataCount++; // 没有数据的账号
+                    }
                 } catch (error) {
                     console.error("Error fetching data for address:", address, error);
-                    resultsDiv.innerHTML += `
-                        <tr class="result-item">
-                            <td colspan="8">查询失败: 无法获取数据</td>
-                        </tr>
-                    `;
+
+                    // 查询失败时，依然显示地址，并填充默认值
+                    resultsDiv.innerHTML += 
+                        `<tr class="result-item">
+                            <td>${index}</td>
+                            <td>${address}</td>
+                            <td>0 IP</td>
+                            <td>0</td>
+                            <td>无法获取数据</td>
+                            <td>无法获取数据</td>
+                            <td>无法获取数据</td>
+                            <td>无法获取数据</td>
+                        </tr>`;
+                    index++; // 增加编号
+                    noDataCount++; // 查询失败的账号也算没有数据
+                }
+
+                // 清空查询状态
+                queryStatusDiv.innerHTML = '';
+            }
+
+            // 更新统计信息
+            document.getElementById("totalCount").textContent = totalCount;
+            document.getElementById("withDataCount").textContent = withDataCount;
+            document.getElementById("noDataCount").textContent = noDataCount;
+        });
+
+        // 增加重试机制
+        async function fetchWithRetry(url, retries = 3, delay = 1000) {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url);
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response;
+                } catch (error) {
+                    console.error(`Fetch attempt ${i + 1} failed: ${error.message}`);
+                    if (i < retries - 1) {
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                    } else {
+                        throw error; // Throw error after all retries
+                    }
                 }
             }
-        });
+        }
     </script>
 
 </body>
