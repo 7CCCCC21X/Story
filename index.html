@@ -122,6 +122,7 @@
             <p>总查询账号数: <span id="totalCount">0</span></p>
             <p>有数据的账号数: <span id="withDataCount">0</span></p>
             <p>没有数据的账号数: <span id="noDataCount">0</span></p>
+            <p>总IP余额: <span id="totalIPBalance">0</span> IP</p> <!-- 显示总IP余额 -->
         </div>
 
         <div class="footer">
@@ -143,6 +144,7 @@
             let totalCount = 0; // 总查询账号数
             let withDataCount = 0; // 有数据的账号数
             let noDataCount = 0; // 没有数据的账号数
+            let totalIPBalance = 0; // 总IP余额
             let index = 1; // 初始化编号
 
             for (let address of addresses) {
@@ -173,12 +175,14 @@
                     const balance = balanceData.coin_balance ? (parseInt(balanceData.coin_balance) / Math.pow(10, 18)).toFixed(6) : "0";
                     const transactionsCount = transactionData.transactions_count ? parseInt(transactionData.transactions_count) : 0;
 
+                    // 累加总IP余额
+                    totalIPBalance += parseFloat(balance);
+
                     let nftList = '';
                     if (includeNft && nftData.items.length > 0) {
                         nftList = nftData.items.map(item => 
                             `<p><span>NFT 名称:</span> ${item.token.name}</p>
-                            <p><span>NFT 数量:</span> ${item.value}</p>`
-                        ).join('');
+                            <p><span>NFT 数量:</span> ${item.value}</p>`).join('');
                     } else if (includeNft) {
                         nftList = `<p><span>NFT:</span> 无</p>`;
                     }
@@ -269,6 +273,7 @@
             document.getElementById("totalCount").textContent = totalCount;
             document.getElementById("withDataCount").textContent = withDataCount;
             document.getElementById("noDataCount").textContent = noDataCount;
+            document.getElementById("totalIPBalance").textContent = totalIPBalance.toFixed(6); // 显示总IP余额
         });
 
         // 增加重试机制
